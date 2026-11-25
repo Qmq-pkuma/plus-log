@@ -1142,6 +1142,13 @@ select {
   cursor: pointer;
 }
 
+.app-version {
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 2px 0 6px;
+}
+
 .sync-indicator.is-err {
   color: #b45309;
   border-color: #fcd34d;

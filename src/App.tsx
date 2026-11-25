@@ -620,6 +620,8 @@ export function App() {
           onDeleteTask={handleDeleteTask}
           onImportData={handleImportData}
         />
+
+        <footer className="app-version num">加点ログ v0.2.2</footer>
       </main>
     </div>
   );
