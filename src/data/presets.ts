@@ -1,0 +1,72 @@
+import type { AppData, AppSettings, TaskItem } from '../types';
+
+export const DEFAULT_TASKS: TaskItem[] = [
+  {
+    id: 'morning-meds',
+    name: '朝の薬',
+    code: 'MORNING_MEDS',
+    points: 5,
+    icon: 'sun',
+    span: 'half',
+  },
+  {
+    id: 'night-meds',
+    name: '夜の薬',
+    code: 'NIGHT_MEDS',
+    points: 5,
+    icon: 'moon',
+    span: 'half',
+  },
+  {
+    id: 'bath',
+    name: 'お風呂',
+    code: 'BATH',
+    points: 10,
+    icon: 'bath',
+    span: 'full',
+  },
+  {
+    id: 'moisturizer',
+    name: '保湿剤',
+    code: 'MOISTURIZER',
+    points: 5,
+    icon: 'droplets',
+    span: 'half',
+    parentId: 'bath',
+    chainWindowMinutes: 120,
+    chainBonus: 2,
+  },
+  {
+    id: 'derm-meds',
+    name: '皮膚科の薬',
+    code: 'DERM_MEDS',
+    points: 5,
+    icon: 'flask',
+    span: 'half',
+    parentId: 'bath',
+    chainWindowMinutes: 120,
+    chainBonus: 2,
+  },
+  {
+    id: 'toothbrush',
+    name: '歯磨き',
+    code: 'TOOTHBRUSH',
+    points: 3,
+    icon: 'sparkles',
+    span: 'half',
+  },
+];
+
+export const DEFAULT_SETTINGS: AppSettings = {
+  soundEnabled: true,
+  volume: 0.85,
+  soundProfile: 'rpg_poke',
+  hapticsEnabled: true,
+};
+
+export const INITIAL_APP_DATA: AppData = {
+  version: 1,
+  tasks: DEFAULT_TASKS,
+  logs: [],
+  settings: DEFAULT_SETTINGS,
+};
