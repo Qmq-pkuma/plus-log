@@ -218,6 +218,14 @@ export function ConfigSection({
             <p className="sync-desc">
               GitHubの<code>gist</code>権限トークンを1回設定すると、タップするたびに非公開Gistへ自動保存され、PCブラウザやスクリプトからも最新データを取得できます。
             </p>
+            <a
+              href="https://github.com/settings/tokens/new?scopes=gist&description=pluslog-sync"
+              target="_blank"
+              rel="noreferrer"
+              className="secondary-btn sync-link-btn"
+            >
+              GitHubで専用トークンを作成（gistのみ選択済み）
+            </a>
             <input
               type="password"
               className="config-input"

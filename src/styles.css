@@ -1046,6 +1046,11 @@ select {
   gap: 6px;
 }
 
+.sync-link-btn {
+  text-decoration: none;
+  font-size: 12px;
+}
+
 .sync-indicator.is-err {
   color: #b45309;
   border-color: #fcd34d;
