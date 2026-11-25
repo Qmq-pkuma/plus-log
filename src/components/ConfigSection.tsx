@@ -5,6 +5,7 @@ import {
   Cloud,
   Copy,
   Download,
+  ListChecks,
   Music,
   Play,
   Plus,
@@ -29,6 +30,8 @@ import {
 import { exportAppDataJson, parseImportedJson } from '../lib/storage';
 import type { AppData, AppSettings, IconKey, SfxSlot, SoundProfile, TaskItem } from '../types';
 import { ICON_OPTIONS, IconGlyph } from './IconGlyph';
+
+type ConfigPanel = 'sync' | 'sound' | 'tasks' | 'backup';
 
 interface ConfigSectionProps {
   data: AppData;
@@ -58,6 +61,7 @@ export function ConfigSection({
   onImportData,
 }: ConfigSectionProps) {
   const [open, setOpen] = useState(false);
+  const [activePanel, setActivePanel] = useState<ConfigPanel | null>(null);
   const [tokenInput, setTokenInput] = useState(syncConfig.token);
   const [gistIdInput, setGistIdInput] = useState(syncConfig.gistId);
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
@@ -76,6 +80,10 @@ export function ConfigSection({
 
   const rootCandidates = data.tasks.filter((t) => !t.parentId);
   const customNames = data.settings.customSoundNames ?? {};
+
+  const togglePanel = (panel: ConfigPanel) => {
+    setActivePanel((cur) => (cur === panel ? null : panel));
+  };
 
   const handleSaveGistSync = async (e: FormEvent) => {
     e.preventDefault();
@@ -200,7 +208,7 @@ export function ConfigSection({
       >
         <span className="config-toggle__title">
           <Settings size={16} strokeWidth={1.9} />
-          設定・自動同期・効果音・項目編集
+          設定（自動同期・効果音・項目編集）
         </span>
         <span className="config-toggle__caret">
           {open ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
@@ -208,377 +216,446 @@ export function ConfigSection({
       </button>
 
       {open && (
-        <div className="config-body">
-          {/* GitHub 非公開Gist 自動バックアップ・同期 */}
-          <form className="config-group" onSubmit={(e) => void handleSaveGistSync(e)}>
-            <div className="config-group__title">
-              <Cloud size={13} style={{ verticalAlign: '-2px', marginRight: 5 }} />
-              自動バックアップ＆PC同期（GitHub 非公開Gist）
-            </div>
-            <p className="sync-desc">
-              GitHubの<code>gist</code>権限トークンを1回設定すると、タップするたびに非公開Gistへ自動保存され、PCブラウザやスクリプトからも最新データを取得できます。
-            </p>
-            <a
-              href="https://github.com/settings/tokens/new?scopes=gist&description=pluslog-sync"
-              target="_blank"
-              rel="noreferrer"
-              className="secondary-btn sync-link-btn"
+        <div className="config-accordion-list">
+          {/* 1. 自動バックアップ＆PC同期 */}
+          <div className="cfg-acc">
+            <button
+              type="button"
+              className={`cfg-acc__head ${activePanel === 'sync' ? 'is-open' : ''}`}
+              onClick={() => togglePanel('sync')}
             >
-              GitHubで専用トークンを作成（gistのみ選択済み）
-            </a>
-            <input
-              type="password"
-              className="config-input"
-              placeholder="GitHubトークン（ghp_... / github_pat_...）"
-              value={tokenInput}
-              onChange={(e) => setTokenInput(e.target.value)}
-              autoComplete="off"
-            />
-            <div className="sync-gist-row">
-              <input
-                type="text"
-                className="config-input config-input--inline num"
-                placeholder="Gist ID（初回は空欄で自動作成）"
-                value={gistIdInput || syncConfig.gistId}
-                onChange={(e) => setGistIdInput(e.target.value)}
-              />
-              {syncConfig.gistId && (
-                <button
-                  type="button"
-                  className="icon-btn"
-                  title="Gist IDをコピー"
-                  onClick={handleCopyGistId}
+              <span className="cfg-acc__title">
+                <Cloud size={15} />
+                自動バックアップ・PC同期
+              </span>
+              <span className="cfg-acc__right">
+                <span className={`cfg-badge ${syncConfig.enabled ? 'is-on' : ''}`}>
+                  {syncConfig.enabled ? 'オン' : '未設定'}
+                </span>
+                {activePanel === 'sync' ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              </span>
+            </button>
+            {activePanel === 'sync' && (
+              <form className="cfg-acc__body" onSubmit={(e) => void handleSaveGistSync(e)}>
+                <p className="sync-desc">
+                  下のボタンから<code>gist</code>権限トークンを作成して貼ると、タップのたびに非公開Gistへ自動保存されます。
+                </p>
+                <a
+                  href="https://github.com/settings/tokens/new?scopes=gist&description=pluslog-sync"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="secondary-btn sync-link-btn"
                 >
-                  <Copy size={14} />
-                </button>
-              )}
-            </div>
-            <div className="backup-actions">
-              <button type="submit" className="primary-btn" style={{ flex: 1 }}>
-                {syncConfig.enabled ? '設定を更新して同期' : '接続して自動同期を開始'}
-              </button>
-              {syncConfig.enabled && (
-                <>
-                  <button
-                    type="button"
-                    className="mini-btn"
-                    style={{ height: 40 }}
-                    onClick={onManualSync}
-                  >
-                    <RefreshCw size={13} className={syncState === 'syncing' ? 'spin' : ''} />
-                    今すぐ同期
+                  GitHubで専用トークンを作成（gistのみ選択済み）
+                </a>
+                <input
+                  type="password"
+                  className="config-input"
+                  placeholder="トークンをここに貼り付け（ghp_...）"
+                  value={tokenInput}
+                  onChange={(e) => setTokenInput(e.target.value)}
+                  autoComplete="off"
+                />
+                <div className="sync-gist-row">
+                  <input
+                    type="text"
+                    className="config-input config-input--inline num"
+                    placeholder="Gist ID（初回は空欄のままでOK）"
+                    value={gistIdInput || syncConfig.gistId}
+                    onChange={(e) => setGistIdInput(e.target.value)}
+                  />
+                  {syncConfig.gistId && (
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      title="Gist IDをコピー"
+                      onClick={handleCopyGistId}
+                    >
+                      <Copy size={14} />
+                    </button>
+                  )}
+                </div>
+                <div className="backup-actions">
+                  <button type="submit" className="primary-btn" style={{ flex: 1 }}>
+                    {syncConfig.enabled ? '設定を更新して同期' : '接続して自動同期を開始'}
                   </button>
-                  <button
-                    type="button"
-                    className="mini-btn"
-                    style={{ height: 40 }}
-                    onClick={handleDisableGistSync}
-                  >
-                    停止
-                  </button>
-                </>
-              )}
-            </div>
-            {syncConfig.enabled && syncConfig.lastSyncedAt && (
-              <div className="config-note num">
-                自動同期中 ・ 最終同期 {formatShortTime(syncConfig.lastSyncedAt)}
-              </div>
-            )}
-            {syncError && <div className="config-err">{syncError}</div>}
-            {syncNotice && !syncError && <div className="config-note">{syncNotice}</div>}
-          </form>
-
-          {/* 効果音パック・個別カスタム */}
-          <div className="config-group">
-            <div className="config-group__title">標準の効果音パック</div>
-
-            <div className="sound-grid">
-              {SOUND_PROFILES.map((p) => {
-                const active = data.settings.soundProfile === p.value;
-                return (
-                  <button
-                    key={p.value}
-                    type="button"
-                    className={`sound-card ${active ? 'is-active' : ''}`}
-                    onClick={() => handleSelectProfile(p.value)}
-                  >
-                    <span className="sound-card__name">{p.label}</span>
-                    <span className="sound-card__desc">{p.desc}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="config-group__title" style={{ marginTop: 6 }}>
-              枠ごとの試聴・手持ち音源の差し替え（MP3 / WAV / OGG）
-            </div>
-            <div className="slot-list">
-              {SFX_SLOTS.map((slot) => {
-                const customFile = customNames[slot.key];
-                return (
-                  <div key={slot.key} className="slot-row">
-                    <div className="slot-row__info">
-                      <span className="slot-row__label">{slot.label}</span>
-                      <span className="slot-row__name">
-                        {customFile ? customFile : '標準パックを使用'}
-                      </span>
-                    </div>
-                    <div className="slot-row__actions">
+                  {syncConfig.enabled && (
+                    <>
                       <button
                         type="button"
-                        className="icon-btn"
-                        title="試聴"
-                        onClick={() =>
-                          playSampleSlot(
-                            data.settings.soundProfile,
-                            slot.key,
-                            data.settings.volume,
-                            Boolean(customFile)
-                          )
-                        }
+                        className="mini-btn"
+                        style={{ height: 40 }}
+                        onClick={onManualSync}
                       >
-                        <Play size={13} />
+                        <RefreshCw size={13} className={syncState === 'syncing' ? 'spin' : ''} />
+                        同期
                       </button>
                       <button
                         type="button"
                         className="mini-btn"
-                        onClick={() => handleTriggerSlotUpload(slot.key)}
+                        style={{ height: 40 }}
+                        onClick={handleDisableGistSync}
                       >
-                        <Music size={12} />
-                        変更
+                        停止
                       </button>
-                      {customFile && (
-                        <button
-                          type="button"
-                          className="icon-btn"
-                          title="標準に戻す"
-                          onClick={() => void handleClearSlot(slot.key)}
-                        >
-                          <X size={13} />
-                        </button>
-                      )}
-                    </div>
+                    </>
+                  )}
+                </div>
+                {syncConfig.enabled && syncConfig.lastSyncedAt && (
+                  <div className="config-note num">
+                    自動同期中 ・ 最終同期 {formatShortTime(syncConfig.lastSyncedAt)}
                   </div>
-                );
-              })}
-            </div>
-            <input
-              ref={audioInputRef}
-              type="file"
-              accept="audio/*"
-              className="sr-only"
-              onChange={(e) => void handleUploadCustomSound(e)}
-            />
-            {soundMessage && <div className="config-note">{soundMessage}</div>}
-
-            <div className="config-row">
-              <label className="config-label">
-                <Volume2 size={14} />
-                音量 <span className="num">{Math.round(data.settings.volume * 100)}%</span>
-              </label>
-              <div className="config-slider-wrap">
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  step={5}
-                  value={Math.round(data.settings.volume * 100)}
-                  onChange={(e) => onUpdateSettings({ volume: Number(e.target.value) / 100 })}
-                />
-              </div>
-            </div>
-
-            <div className="config-row">
-              <label className="config-label">
-                <Vibrate size={14} />
-                タップ時の振動（Android）
-              </label>
-              <button
-                type="button"
-                className={`toggle-pill ${data.settings.hapticsEnabled ? 'is-on' : ''}`}
-                onClick={() =>
-                  onUpdateSettings({ hapticsEnabled: !data.settings.hapticsEnabled })
-                }
-              >
-                {data.settings.hapticsEnabled ? 'オン' : 'オフ'}
-              </button>
-            </div>
+                )}
+                {syncError && <div className="config-err">{syncError}</div>}
+                {syncNotice && !syncError && <div className="config-note">{syncNotice}</div>}
+              </form>
+            )}
           </div>
 
-          {/* 既存項目編集 */}
-          <div className="config-group">
-            <div className="config-group__title">項目の編集・配点</div>
-            <div className="task-edit-list">
-              {data.tasks.map((task) => {
-                const parent = task.parentId
-                  ? data.tasks.find((t) => t.id === task.parentId)
-                  : undefined;
-                return (
-                  <div key={task.id} className="task-edit-item">
-                    <div className="task-edit-item__head">
-                      <span className="task-edit-item__icon">
-                        <IconGlyph icon={task.icon} size={15} />
-                      </span>
+          {/* 2. 効果音・振動 */}
+          <div className="cfg-acc">
+            <button
+              type="button"
+              className={`cfg-acc__head ${activePanel === 'sound' ? 'is-open' : ''}`}
+              onClick={() => togglePanel('sound')}
+            >
+              <span className="cfg-acc__title">
+                <Volume2 size={15} />
+                効果音・振動
+              </span>
+              <span className="cfg-acc__right">
+                {activePanel === 'sound' ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              </span>
+            </button>
+            {activePanel === 'sound' && (
+              <div className="cfg-acc__body">
+                <div className="sound-grid">
+                  {SOUND_PROFILES.map((p) => {
+                    const active = data.settings.soundProfile === p.value;
+                    return (
+                      <button
+                        key={p.value}
+                        type="button"
+                        className={`sound-card ${active ? 'is-active' : ''}`}
+                        onClick={() => handleSelectProfile(p.value)}
+                      >
+                        <span className="sound-card__name">{p.label}</span>
+                        <span className="sound-card__desc">{p.desc}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="config-group__title">枠ごとの試聴・手持ち音源へ変更</div>
+                <div className="slot-list">
+                  {SFX_SLOTS.map((slot) => {
+                    const customFile = customNames[slot.key];
+                    return (
+                      <div key={slot.key} className="slot-row">
+                        <div className="slot-row__info">
+                          <span className="slot-row__label">{slot.label}</span>
+                          <span className="slot-row__name">
+                            {customFile ? customFile : '標準パック'}
+                          </span>
+                        </div>
+                        <div className="slot-row__actions">
+                          <button
+                            type="button"
+                            className="icon-btn"
+                            title="試聴"
+                            onClick={() =>
+                              playSampleSlot(
+                                data.settings.soundProfile,
+                                slot.key,
+                                data.settings.volume,
+                                Boolean(customFile)
+                              )
+                            }
+                          >
+                            <Play size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            className="mini-btn"
+                            onClick={() => handleTriggerSlotUpload(slot.key)}
+                          >
+                            <Music size={12} />
+                            変更
+                          </button>
+                          {customFile && (
+                            <button
+                              type="button"
+                              className="icon-btn"
+                              title="標準に戻す"
+                              onClick={() => void handleClearSlot(slot.key)}
+                            >
+                              <X size={13} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <input
+                  ref={audioInputRef}
+                  type="file"
+                  accept="audio/*"
+                  className="sr-only"
+                  onChange={(e) => void handleUploadCustomSound(e)}
+                />
+                {soundMessage && <div className="config-note">{soundMessage}</div>}
+
+                <div className="config-row">
+                  <label className="config-label">
+                    <Volume2 size={14} />
+                    音量 <span className="num">{Math.round(data.settings.volume * 100)}%</span>
+                  </label>
+                  <div className="config-slider-wrap">
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={Math.round(data.settings.volume * 100)}
+                      onChange={(e) => onUpdateSettings({ volume: Number(e.target.value) / 100 })}
+                    />
+                  </div>
+                </div>
+
+                <div className="config-row">
+                  <label className="config-label">
+                    <Vibrate size={14} />
+                    タップ時の振動（Android）
+                  </label>
+                  <button
+                    type="button"
+                    className={`toggle-pill ${data.settings.hapticsEnabled ? 'is-on' : ''}`}
+                    onClick={() =>
+                      onUpdateSettings({ hapticsEnabled: !data.settings.hapticsEnabled })
+                    }
+                  >
+                    {data.settings.hapticsEnabled ? 'オン' : 'オフ'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 3. 項目の追加・編集 */}
+          <div className="cfg-acc">
+            <button
+              type="button"
+              className={`cfg-acc__head ${activePanel === 'tasks' ? 'is-open' : ''}`}
+              onClick={() => togglePanel('tasks')}
+            >
+              <span className="cfg-acc__title">
+                <ListChecks size={15} />
+                項目の追加・編集（{data.tasks.length}件）
+              </span>
+              <span className="cfg-acc__right">
+                {activePanel === 'tasks' ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              </span>
+            </button>
+            {activePanel === 'tasks' && (
+              <div className="cfg-acc__body">
+                <div className="task-edit-list">
+                  {data.tasks.map((task) => {
+                    const parent = task.parentId
+                      ? data.tasks.find((t) => t.id === task.parentId)
+                      : undefined;
+                    return (
+                      <div key={task.id} className="task-edit-item">
+                        <div className="task-edit-item__head">
+                          <span className="task-edit-item__icon">
+                            <IconGlyph icon={task.icon} size={15} />
+                          </span>
+                          <input
+                            type="text"
+                            className="config-input config-input--inline"
+                            value={task.name}
+                            onChange={(e) => onUpdateTask(task.id, { name: e.target.value })}
+                            aria-label="項目名"
+                          />
+                          <label className="task-edit-item__pt num">
+                            +
+                            <input
+                              type="number"
+                              min={1}
+                              max={999}
+                              className="config-input config-input--num num"
+                              value={task.points}
+                              onChange={(e) =>
+                                onUpdateTask(task.id, {
+                                  points: Math.max(1, Math.min(999, Number(e.target.value) || 1)),
+                                })
+                              }
+                            />
+                            pt
+                          </label>
+                          <button
+                            type="button"
+                            className="icon-btn"
+                            onClick={() => onDeleteTask(task.id)}
+                            title="削除"
+                            aria-label={`${task.name}を削除`}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                        {parent && (
+                          <div className="task-edit-item__sub">
+                            {parent.name}のあとに連動（+{task.chainBonus ?? 0}pt / {task.chainWindowMinutes ?? 120}分以内）
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <form className="add-grid" onSubmit={handleCreateTask}>
+                  <div className="config-group__title">新しい項目を追加</div>
+                  <input
+                    type="text"
+                    className="config-input"
+                    placeholder="項目名（例：ストレッチ）"
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                  />
+                  <div className="add-row">
+                    <label className="add-field">
+                      <span>配点</span>
                       <input
-                        type="text"
-                        className="config-input config-input--inline"
-                        value={task.name}
-                        onChange={(e) => onUpdateTask(task.id, { name: e.target.value })}
-                        aria-label="項目名"
+                        type="number"
+                        min={1}
+                        max={999}
+                        className="config-input num"
+                        value={newPoints}
+                        onChange={(e) => setNewPoints(Number(e.target.value))}
                       />
-                      <label className="task-edit-item__pt num">
-                        +
+                    </label>
+                    <label className="add-field">
+                      <span>アイコン</span>
+                      <select
+                        className="config-input"
+                        value={newIcon}
+                        onChange={(e) => setNewIcon(e.target.value as IconKey)}
+                      >
+                        {ICON_OPTIONS.map((opt) => (
+                          <option key={opt.key} value={opt.key}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <div className="add-row">
+                    <label className="add-field">
+                      <span>連動元（任意）</span>
+                      <select
+                        className="config-input"
+                        value={newParentId}
+                        onChange={(e) => setNewParentId(e.target.value)}
+                      >
+                        <option value="">なし（単独ボタン）</option>
+                        {rootCandidates.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}のあと
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {newParentId ? (
+                      <label className="add-field">
+                        <span>連動ボーナス</span>
                         <input
                           type="number"
-                          min={1}
-                          max={999}
-                          className="config-input config-input--num num"
-                          value={task.points}
-                          onChange={(e) =>
-                            onUpdateTask(task.id, {
-                              points: Math.max(1, Math.min(999, Number(e.target.value) || 1)),
-                            })
-                          }
+                          min={0}
+                          max={99}
+                          className="config-input num"
+                          value={newChainBonus}
+                          onChange={(e) => setNewChainBonus(Number(e.target.value))}
                         />
-                        pt
                       </label>
-                      <button
-                        type="button"
-                        className="icon-btn"
-                        onClick={() => onDeleteTask(task.id)}
-                        title="削除"
-                        aria-label={`${task.name}を削除`}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                    {parent && (
-                      <div className="task-edit-item__sub">
-                        {parent.name}のあとに連動（+{task.chainBonus ?? 0}pt / {task.chainWindowMinutes ?? 120}分以内）
-                      </div>
+                    ) : (
+                      <label className="add-field">
+                        <span>ボタンの大きさ</span>
+                        <select
+                          className="config-input"
+                          value={newSpan}
+                          onChange={(e) => setNewSpan(e.target.value as 'half' | 'full')}
+                        >
+                          <option value="half">標準（2列）</option>
+                          <option value="full">大きめ（全幅）</option>
+                        </select>
+                      </label>
                     )}
                   </div>
-                );
-              })}
-            </div>
+                  <button type="submit" className="primary-btn">
+                    <Plus size={15} />
+                    この項目を追加
+                  </button>
+                </form>
+              </div>
+            )}
           </div>
 
-          {/* 新規項目追加 */}
-          <form className="config-group" onSubmit={handleCreateTask}>
-            <div className="config-group__title">項目を追加</div>
-            <div className="add-grid">
-              <input
-                type="text"
-                className="config-input"
-                placeholder="項目名（例：ストレッチ）"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-              />
-              <div className="add-row">
-                <label className="add-field">
-                  <span>配点</span>
+          {/* 4. 手動バックアップ */}
+          <div className="cfg-acc">
+            <button
+              type="button"
+              className={`cfg-acc__head ${activePanel === 'backup' ? 'is-open' : ''}`}
+              onClick={() => togglePanel('backup')}
+            >
+              <span className="cfg-acc__title">
+                <Download size={15} />
+                手動バックアップ（JSON）
+              </span>
+              <span className="cfg-acc__right">
+                {activePanel === 'backup' ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              </span>
+            </button>
+            {activePanel === 'backup' && (
+              <div className="cfg-acc__body">
+                <div className="backup-actions">
+                  <button
+                    type="button"
+                    className="secondary-btn"
+                    onClick={() => exportAppDataJson(data)}
+                  >
+                    <Download size={14} />
+                    ファイルに保存
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-btn"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Upload size={14} />
+                    ファイルから復元
+                  </button>
                   <input
-                    type="number"
-                    min={1}
-                    max={999}
-                    className="config-input num"
-                    value={newPoints}
-                    onChange={(e) => setNewPoints(Number(e.target.value))}
+                    ref={fileInputRef}
+                    type="file"
+                    accept="application/json,.json"
+                    className="sr-only"
+                    onChange={handleImportFile}
                   />
-                </label>
-                <label className="add-field">
-                  <span>アイコン</span>
-                  <select
-                    className="config-input"
-                    value={newIcon}
-                    onChange={(e) => setNewIcon(e.target.value as IconKey)}
-                  >
-                    {ICON_OPTIONS.map((opt) => (
-                      <option key={opt.key} value={opt.key}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                </div>
+                {importMessage && <div className="config-note">{importMessage}</div>}
               </div>
-              <div className="add-row">
-                <label className="add-field">
-                  <span>連動元（任意）</span>
-                  <select
-                    className="config-input"
-                    value={newParentId}
-                    onChange={(e) => setNewParentId(e.target.value)}
-                  >
-                    <option value="">なし（単独ボタン）</option>
-                    {rootCandidates.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}のあと
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {newParentId ? (
-                  <label className="add-field">
-                    <span>連動ボーナス</span>
-                    <input
-                      type="number"
-                      min={0}
-                      max={99}
-                      className="config-input num"
-                      value={newChainBonus}
-                      onChange={(e) => setNewChainBonus(Number(e.target.value))}
-                    />
-                  </label>
-                ) : (
-                  <label className="add-field">
-                    <span>ボタンの大きさ</span>
-                    <select
-                      className="config-input"
-                      value={newSpan}
-                      onChange={(e) => setNewSpan(e.target.value as 'half' | 'full')}
-                    >
-                      <option value="half">標準（2列）</option>
-                      <option value="full">大きめ（全幅）</option>
-                    </select>
-                  </label>
-                )}
-              </div>
-              <button type="submit" className="primary-btn">
-                <Plus size={15} />
-                この項目を追加
-              </button>
-            </div>
-          </form>
+            )}
+          </div>
 
-          {/* 手動バックアップ */}
-          <div className="config-group">
-            <div className="config-group__title">手動バックアップ（JSONファイル）</div>
-            <div className="backup-actions">
-              <button
-                type="button"
-                className="secondary-btn"
-                onClick={() => exportAppDataJson(data)}
-              >
-                <Download size={14} />
-                ファイルに保存
-              </button>
-              <button
-                type="button"
-                className="secondary-btn"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <Upload size={14} />
-                ファイルから復元
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="application/json,.json"
-                className="sr-only"
-                onChange={handleImportFile}
-              />
-            </div>
-            {importMessage && <div className="config-note">{importMessage}</div>}
+          <div className="cfg-footer num">
+            <span>v0.2.1</span>
+            <button
+              type="button"
+              className="cfg-reload-btn"
+              onClick={() => window.location.reload()}
+            >
+              画面を再読み込み
+            </button>
           </div>
         </div>
       )}

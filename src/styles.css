@@ -1051,6 +1051,97 @@ select {
   font-size: 12px;
 }
 
+/* 設定メニューの小アコーディオン */
+.config-accordion-list {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cfg-acc {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-sub);
+  overflow: hidden;
+}
+
+.cfg-acc__head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 13px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.cfg-acc__head.is-open {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.cfg-acc__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.cfg-acc__right {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+}
+
+.cfg-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 99px;
+  background: #e5e7eb;
+  color: var(--text-sub);
+}
+
+.cfg-badge.is-on {
+  background: var(--green-bg);
+  color: var(--green-dark);
+}
+
+.cfg-acc__body {
+  padding: 12px;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cfg-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 2px 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.cfg-reload-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-sub);
+  font-size: 11px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .sync-indicator.is-err {
   color: #b45309;
   border-color: #fcd34d;
