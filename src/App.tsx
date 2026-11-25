@@ -1,12 +1,17 @@
-import { useEffect, useMemo, useState } from 'react';
-import { CornerDownRight, RotateCcw, Volume2, VolumeX } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Cloud, CloudOff, CornerDownRight, RefreshCw, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 import { ActionButton } from './components/ActionButton';
 import { ConfigSection } from './components/ConfigSection';
+import {
+  loadSyncConfig,
+  saveSyncConfig,
+  syncWithGist,
+  type GistSyncConfig,
+} from './lib/gistSync';
 import {
   buildSystemNote,
   computeFrictionIndex,
   computeLevelProgress,
-  formatLogTimestamp,
   formatShortTime,
   isTaskChainReady,
 } from './lib/progression';
@@ -19,8 +24,22 @@ import {
 import { loadAppData, saveAppData } from './lib/storage';
 import type { AppData, AppSettings, LogEntry, TaskItem } from './types';
 
+function localDateHeading(timestamp: number): string {
+  const d = new Date(timestamp);
+  const y = d.getFullYear();
+  const m = d.getMonth() + 1;
+  const day = d.getDate();
+  const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
+  const wd = weekdays[d.getDay()];
+  return `${y}/${String(m).padStart(2, '0')}/${String(day).padStart(2, '0')} (${wd})`;
+}
+
 export function App() {
   const [data, setData] = useState<AppData>(() => loadAppData());
+  const [syncConfig, setSyncConfig] = useState<GistSyncConfig>(() => loadSyncConfig());
+  const [syncState, setSyncState] = useState<'idle' | 'syncing' | 'ok' | 'error'>('idle');
+  const [syncError, setSyncError] = useState<string | null>(null);
+
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [levelUpBanner, setLevelUpBanner] = useState<number | null>(null);
   const [barOverridePercent, setBarOverridePercent] = useState<number | null>(null);
@@ -29,24 +48,92 @@ export function App() {
   const [displayPoints, setDisplayPoints] = useState(0);
   const [showAllLogs, setShowAllLogs] = useState(false);
 
+  const dataRef = useRef(data);
+  const syncConfigRef = useRef(syncConfig);
+  const deletedLogIdsRef = useRef<Set<string>>(new Set());
+  const syncTimerRef = useRef<number | null>(null);
+
+  dataRef.current = data;
+  syncConfigRef.current = syncConfig;
+
   useEffect(() => {
     saveAppData(data);
   }, [data]);
 
   useEffect(() => {
+    saveSyncConfig(syncConfig);
+  }, [syncConfig]);
+
+  useEffect(() => {
     preloadSoundPack(data.settings.soundProfile, data.settings.customSoundNames);
   }, [data.settings.soundProfile, data.settings.customSoundNames]);
 
+  const runSync = async (overrideConfig?: GistSyncConfig) => {
+    const cfg = overrideConfig ?? syncConfigRef.current;
+    if (!cfg.enabled || !cfg.token) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+
+    setSyncState('syncing');
+    setSyncError(null);
+    try {
+      const res = await syncWithGist({
+        config: cfg,
+        localData: dataRef.current,
+        deletedLogIds: deletedLogIdsRef.current,
+      });
+      deletedLogIdsRef.current.clear();
+      setData(res.merged);
+      setSyncConfig((prev) => ({
+        ...prev,
+        ...cfg,
+        gistId: res.gistId,
+        lastSyncedAt: res.syncedAt,
+      }));
+      setSyncState('ok');
+    } catch (err) {
+      setSyncState('error');
+      setSyncError(err instanceof Error ? err.message : '同期に失敗しました');
+    }
+  };
+
+  const scheduleAutoSync = () => {
+    const cfg = syncConfigRef.current;
+    if (!cfg.enabled || !cfg.token) return;
+    if (syncTimerRef.current !== null) {
+      window.clearTimeout(syncTimerRef.current);
+    }
+    syncTimerRef.current = window.setTimeout(() => {
+      syncTimerRef.current = null;
+      void runSync();
+    }, 1500);
+  };
+
+  // 初回起動時とアプリ復帰時に自動同期
   useEffect(() => {
+    if (syncConfigRef.current.enabled && syncConfigRef.current.token) {
+      void runSync();
+    }
     const tick = () => setNowMs(Date.now());
     const id = window.setInterval(tick, 30_000);
     const onVis = () => {
-      if (document.visibilityState === 'visible') tick();
+      if (document.visibilityState === 'visible') {
+        tick();
+        if (syncConfigRef.current.enabled && syncConfigRef.current.token) {
+          void runSync();
+        }
+      }
+    };
+    const onOnline = () => {
+      if (syncConfigRef.current.enabled && syncConfigRef.current.token) {
+        void runSync();
+      }
     };
     document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('online', onOnline);
     return () => {
       window.clearInterval(id);
       document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('online', onOnline);
     };
   }, []);
 
@@ -177,10 +264,6 @@ export function App() {
     window.setTimeout(() => setPointBump(false), 320);
 
     if (leveledUpTo !== undefined) {
-      // 2段階レベルアップ演出：
-      // 1) バーを100%満タンへ駆け上げ
-      // 2) 300ms後に満タン閃光＋レベルアップバナー表示
-      // 3) 620ms後に余剰ポイントのバー位置へスッと展開
       setBarOverridePercent(100);
       window.setTimeout(() => {
         setBarGoldFlash(true);
@@ -205,15 +288,19 @@ export function App() {
       ...prev,
       logs: [entry, ...prev.logs],
     }));
+    scheduleAutoSync();
   };
 
   const handleUndoLatest = () => {
     if (data.logs.length === 0) return;
+    const removed = data.logs[0];
+    deletedLogIdsRef.current.add(removed.id);
     playUndoSound(data.settings.soundEnabled, data.settings.volume);
     setData((prev) => ({
       ...prev,
       logs: prev.logs.slice(1),
     }));
+    scheduleAutoSync();
   };
 
   const handleUpdateSettings = (patch: Partial<AppSettings>) => {
@@ -225,6 +312,7 @@ export function App() {
 
   const handleAddTask = (task: TaskItem) => {
     setData((prev) => ({ ...prev, tasks: [...prev.tasks, task] }));
+    scheduleAutoSync();
   };
 
   const handleUpdateTask = (id: string, patch: Partial<TaskItem>) => {
@@ -232,6 +320,7 @@ export function App() {
       ...prev,
       tasks: prev.tasks.map((t) => (t.id === id ? { ...t, ...patch } : t)),
     }));
+    scheduleAutoSync();
   };
 
   const handleDeleteTask = (id: string) => {
@@ -241,16 +330,40 @@ export function App() {
         .filter((t) => t.id !== id)
         .map((t) => (t.parentId === id ? { ...t, parentId: undefined } : t)),
     }));
+    scheduleAutoSync();
   };
 
   const handleImportData = (next: AppData) => {
     setData(next);
     setNowMs(Date.now());
+    scheduleAutoSync();
+  };
+
+  const handleConnectGist = async (nextConfig: GistSyncConfig) => {
+    setSyncConfig(nextConfig);
+    if (nextConfig.enabled && nextConfig.token) {
+      await runSync(nextConfig);
+    }
   };
 
   const latestLog = data.logs[0];
-  const visibleLogs = showAllLogs ? data.logs : data.logs.slice(0, 15);
+  const visibleLogs = showAllLogs ? data.logs : data.logs.slice(0, 20);
   const remainingToNext = Math.max(0, progress.nextLevelRequired - progress.currentLevelPoints);
+
+  // BaseFlow風の縦レールタイムライン用に日付ごとへグループ化（記録がある日だけ並ぶ）
+  const timelineDays = useMemo(() => {
+    const groups: { dayLabel: string; items: LogEntry[] }[] = [];
+    for (const entry of visibleLogs) {
+      const label = localDateHeading(entry.timestamp);
+      const last = groups[groups.length - 1];
+      if (!last || last.dayLabel !== label) {
+        groups.push({ dayLabel: label, items: [entry] });
+      } else {
+        last.items.push(entry);
+      }
+    }
+    return groups;
+  }, [visibleLogs]);
 
   return (
     <div className="app-shell">
@@ -274,6 +387,28 @@ export function App() {
             </div>
 
             <div className="status-actions">
+              {syncConfig.enabled && (
+                <button
+                  type="button"
+                  className={`top-btn sync-indicator ${syncState === 'error' ? 'is-err' : ''}`}
+                  onClick={() => void runSync()}
+                  title={
+                    syncState === 'error'
+                      ? `同期エラー: ${syncError ?? ''}`
+                      : syncConfig.lastSyncedAt
+                        ? `最終自動同期 ${formatShortTime(syncConfig.lastSyncedAt)}（タップで手動同期）`
+                        : 'タップで同期'
+                  }
+                >
+                  {syncState === 'syncing' ? (
+                    <RefreshCw size={14} className="spin" />
+                  ) : syncState === 'error' ? (
+                    <CloudOff size={14} />
+                  ) : (
+                    <Cloud size={14} />
+                  )}
+                </button>
+              )}
               <button
                 type="button"
                 className="top-btn"
@@ -403,10 +538,10 @@ export function App() {
           </div>
         </section>
 
-        {/* 履歴 */}
+        {/* タイムライン（BaseFlow風の縦レール表示・記録のある日だけ並ぶ） */}
         <section className="card log-card">
           <div className="log-card__head">
-            <span>履歴</span>
+            <span>タイムライン</span>
             <span className="num">{data.logs.length}件</span>
           </div>
 
@@ -414,40 +549,71 @@ export function App() {
             <div className="log-empty">まだ記録はありません</div>
           ) : (
             <>
-              <ul className="log-list">
-                {visibleLogs.map((entry) => (
-                  <li key={entry.id} className="log-row">
-                    <span className="log-row__time num">
-                      {formatLogTimestamp(entry.timestamp)}
-                    </span>
-                    <span className="log-row__main">
-                      <span className="log-row__name">{entry.taskName}</span>
-                      <span className="log-row__note">{entry.systemNote}</span>
-                    </span>
-                    <span
-                      className={`log-row__pt num ${entry.chainBonus > 0 ? 'is-chain' : ''}`}
-                    >
-                      +{entry.points}
-                    </span>
-                  </li>
+              <div className="tl-root">
+                {timelineDays.map((group) => (
+                  <div key={group.dayLabel} className="tl-day-group">
+                    <div className="tl-day-sep num">{group.dayLabel}</div>
+                    {group.items.map((entry) => (
+                      <div key={entry.id} className="tl-row">
+                        <div className="tl-time num">{formatShortTime(entry.timestamp)}</div>
+                        <div className="tl-rail">
+                          <span
+                            className={`tl-dot ${
+                              entry.leveledUpTo
+                                ? 'is-lv'
+                                : entry.chainBonus > 0
+                                  ? 'is-chain'
+                                  : ''
+                            }`}
+                          />
+                        </div>
+                        <div
+                          className={`tl-card ${
+                            entry.leveledUpTo
+                              ? 'is-lv'
+                              : entry.chainBonus > 0
+                                ? 'is-chain'
+                                : ''
+                          }`}
+                        >
+                          <div className="tl-card__top">
+                            <span className="tl-card__name">{entry.taskName}</span>
+                            <span
+                              className={`tl-card__pt num ${
+                                entry.chainBonus > 0 ? 'is-chain' : ''
+                              }`}
+                            >
+                              +{entry.points}pt
+                            </span>
+                          </div>
+                          <div className="tl-card__note">{entry.systemNote}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 ))}
-              </ul>
-              {data.logs.length > 15 && (
+              </div>
+              {data.logs.length > 20 && (
                 <button
                   type="button"
                   className="log-more-btn"
                   onClick={() => setShowAllLogs((v) => !v)}
                 >
-                  {showAllLogs ? '直近15件に戻す' : `すべて表示（全${data.logs.length}件）`}
+                  {showAllLogs ? '直近20件に戻す' : `すべて表示（全${data.logs.length}件）`}
                 </button>
               )}
             </>
           )}
         </section>
 
-        {/* 設定・編集・バックアップ */}
+        {/* 設定・編集・自動同期・バックアップ */}
         <ConfigSection
           data={data}
+          syncConfig={syncConfig}
+          syncState={syncState}
+          syncError={syncError}
+          onConnectGist={handleConnectGist}
+          onManualSync={() => void runSync()}
           onUpdateSettings={handleUpdateSettings}
           onAddTask={handleAddTask}
           onUpdateTask={handleUpdateTask}

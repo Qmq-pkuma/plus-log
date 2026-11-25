@@ -2,10 +2,13 @@ import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import {
   ChevronDown,
   ChevronRight,
+  Cloud,
+  Copy,
   Download,
   Music,
   Play,
   Plus,
+  RefreshCw,
   Settings,
   Trash2,
   Upload,
@@ -13,6 +16,8 @@ import {
   Volume2,
   X,
 } from 'lucide-react';
+import type { GistSyncConfig } from '../lib/gistSync';
+import { formatShortTime } from '../lib/progression';
 import {
   clearCustomSlotAudio,
   playSampleSlot,
@@ -27,6 +32,11 @@ import { ICON_OPTIONS, IconGlyph } from './IconGlyph';
 
 interface ConfigSectionProps {
   data: AppData;
+  syncConfig: GistSyncConfig;
+  syncState: 'idle' | 'syncing' | 'ok' | 'error';
+  syncError: string | null;
+  onConnectGist: (next: GistSyncConfig) => Promise<void>;
+  onManualSync: () => void;
   onUpdateSettings: (patch: Partial<AppSettings>) => void;
   onAddTask: (task: TaskItem) => void;
   onUpdateTask: (id: string, patch: Partial<TaskItem>) => void;
@@ -36,6 +46,11 @@ interface ConfigSectionProps {
 
 export function ConfigSection({
   data,
+  syncConfig,
+  syncState,
+  syncError,
+  onConnectGist,
+  onManualSync,
   onUpdateSettings,
   onAddTask,
   onUpdateTask,
@@ -43,6 +58,10 @@ export function ConfigSection({
   onImportData,
 }: ConfigSectionProps) {
   const [open, setOpen] = useState(false);
+  const [tokenInput, setTokenInput] = useState(syncConfig.token);
+  const [gistIdInput, setGistIdInput] = useState(syncConfig.gistId);
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
+
   const [newName, setNewName] = useState('');
   const [newPoints, setNewPoints] = useState(5);
   const [newIcon, setNewIcon] = useState<IconKey>('check');
@@ -57,6 +76,37 @@ export function ConfigSection({
 
   const rootCandidates = data.tasks.filter((t) => !t.parentId);
   const customNames = data.settings.customSoundNames ?? {};
+
+  const handleSaveGistSync = async (e: FormEvent) => {
+    e.preventDefault();
+    const token = tokenInput.trim();
+    if (!token) {
+      setSyncNotice('GitHubトークン（gist権限）を入力してください');
+      return;
+    }
+    setSyncNotice('接続中…');
+    await onConnectGist({
+      token,
+      gistId: gistIdInput.trim(),
+      enabled: true,
+    });
+    setSyncNotice('自動同期を有効にしました');
+  };
+
+  const handleDisableGistSync = () => {
+    void onConnectGist({
+      token: tokenInput.trim(),
+      gistId: gistIdInput.trim(),
+      enabled: false,
+    });
+    setSyncNotice('自動同期を停止しました');
+  };
+
+  const handleCopyGistId = () => {
+    if (!syncConfig.gistId) return;
+    navigator.clipboard?.writeText(syncConfig.gistId).catch(() => {});
+    setSyncNotice('Gist ID をコピーしました（PC側の設定にも貼れます）');
+  };
 
   const handleSelectProfile = (profile: SoundProfile) => {
     preloadSoundPack(profile, customNames);
@@ -150,7 +200,7 @@ export function ConfigSection({
       >
         <span className="config-toggle__title">
           <Settings size={16} strokeWidth={1.9} />
-          設定・効果音・項目編集
+          設定・自動同期・効果音・項目編集
         </span>
         <span className="config-toggle__caret">
           {open ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
@@ -159,6 +209,77 @@ export function ConfigSection({
 
       {open && (
         <div className="config-body">
+          {/* GitHub 非公開Gist 自動バックアップ・同期 */}
+          <form className="config-group" onSubmit={(e) => void handleSaveGistSync(e)}>
+            <div className="config-group__title">
+              <Cloud size={13} style={{ verticalAlign: '-2px', marginRight: 5 }} />
+              自動バックアップ＆PC同期（GitHub 非公開Gist）
+            </div>
+            <p className="sync-desc">
+              GitHubの<code>gist</code>権限トークンを1回設定すると、タップするたびに非公開Gistへ自動保存され、PCブラウザやスクリプトからも最新データを取得できます。
+            </p>
+            <input
+              type="password"
+              className="config-input"
+              placeholder="GitHubトークン（ghp_... / github_pat_...）"
+              value={tokenInput}
+              onChange={(e) => setTokenInput(e.target.value)}
+              autoComplete="off"
+            />
+            <div className="sync-gist-row">
+              <input
+                type="text"
+                className="config-input config-input--inline num"
+                placeholder="Gist ID（初回は空欄で自動作成）"
+                value={gistIdInput || syncConfig.gistId}
+                onChange={(e) => setGistIdInput(e.target.value)}
+              />
+              {syncConfig.gistId && (
+                <button
+                  type="button"
+                  className="icon-btn"
+                  title="Gist IDをコピー"
+                  onClick={handleCopyGistId}
+                >
+                  <Copy size={14} />
+                </button>
+              )}
+            </div>
+            <div className="backup-actions">
+              <button type="submit" className="primary-btn" style={{ flex: 1 }}>
+                {syncConfig.enabled ? '設定を更新して同期' : '接続して自動同期を開始'}
+              </button>
+              {syncConfig.enabled && (
+                <>
+                  <button
+                    type="button"
+                    className="mini-btn"
+                    style={{ height: 40 }}
+                    onClick={onManualSync}
+                  >
+                    <RefreshCw size={13} className={syncState === 'syncing' ? 'spin' : ''} />
+                    今すぐ同期
+                  </button>
+                  <button
+                    type="button"
+                    className="mini-btn"
+                    style={{ height: 40 }}
+                    onClick={handleDisableGistSync}
+                  >
+                    停止
+                  </button>
+                </>
+              )}
+            </div>
+            {syncConfig.enabled && syncConfig.lastSyncedAt && (
+              <div className="config-note num">
+                自動同期中 ・ 最終同期 {formatShortTime(syncConfig.lastSyncedAt)}
+              </div>
+            )}
+            {syncError && <div className="config-err">{syncError}</div>}
+            {syncNotice && !syncError && <div className="config-note">{syncNotice}</div>}
+          </form>
+
           {/* 効果音パック・個別カスタム */}
           <div className="config-group">
             <div className="config-group__title">標準の効果音パック</div>
@@ -421,9 +542,9 @@ export function ConfigSection({
             </div>
           </form>
 
-          {/* バックアップ */}
+          {/* 手動バックアップ */}
           <div className="config-group">
-            <div className="config-group__title">データのバックアップ</div>
+            <div className="config-group__title">手動バックアップ（JSONファイル）</div>
             <div className="backup-actions">
               <button
                 type="button"
