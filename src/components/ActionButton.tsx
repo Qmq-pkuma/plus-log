@@ -1,5 +1,5 @@
 import { useState, type MouseEvent } from 'react';
-import { Check } from 'lucide-react';
+import { Check, Lock } from 'lucide-react';
 import { formatElapsed } from '../lib/progression';
 import type { TaskItem } from '../types';
 import { IconGlyph } from './IconGlyph';
@@ -37,10 +37,12 @@ export function ActionButton({
   const [justPressed, setJustPressed] = useState(false);
 
   const elapsed = formatElapsed(lastTimestamp, nowMs);
+  const locked = Boolean(task.requireParent && !chainReady);
   const bonus = chainReady ? (task.chainBonus ?? 0) : 0;
   const displayPoints = task.points + bonus;
 
   const handleClick = (e: MouseEvent<HTMLButtonElement>) => {
+    if (locked) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const hasCoords = e.clientX !== 0 || e.clientY !== 0;
     const x = hasCoords ? e.clientX - rect.left : rect.width / 2;
@@ -63,6 +65,7 @@ export function ActionButton({
     'task-btn',
     task.span === 'full' && !isChild ? 'is-full' : '',
     isChild ? 'is-child' : '',
+    locked ? 'is-locked' : '',
     chainReady ? 'is-chain-ready' : '',
     justPressed ? 'is-pressed-ok' : '',
   ]
@@ -70,11 +73,13 @@ export function ActionButton({
     .join(' ');
 
   return (
-    <button type="button" className={classes} onClick={handleClick}>
+    <button type="button" className={classes} onClick={handleClick} disabled={locked}>
       <div className="task-btn__top">
         <span className={`task-btn__icon ${justPressed ? 'is-ok' : ''}`}>
           {justPressed ? (
             <Check size={20} strokeWidth={2.6} />
+          ) : locked ? (
+            <Lock size={16} strokeWidth={2.2} />
           ) : (
             <IconGlyph icon={task.icon} size={isChild ? 18 : 20} />
           )}
@@ -91,8 +96,14 @@ export function ActionButton({
       </div>
 
       <div className="task-btn__meta">
-        <span className="num">累計 {count}回</span>
-        {elapsed && <span className="task-btn__elapsed">{elapsed}</span>}
+        {locked ? (
+          <span className="task-btn__elapsed">上の行動のあとに解放</span>
+        ) : (
+          <>
+            <span className="num">累計 {count}回</span>
+            {elapsed && <span className="task-btn__elapsed">{elapsed}</span>}
+          </>
+        )}
       </div>
 
       <div className="task-btn__fx" aria-hidden="true">

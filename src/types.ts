@@ -29,6 +29,7 @@ export interface TaskItem {
   parentId?: string;
   chainWindowMinutes?: number;
   chainBonus?: number;
+  requireParent?: boolean;
 }
 
 export interface LogEntry {

@@ -391,6 +391,18 @@ select {
   min-height: 106px;
 }
 
+.task-btn.is-locked {
+  opacity: 0.52;
+  background: var(--surface-sub);
+  border-style: dashed;
+  border-bottom-width: 1.5px;
+  cursor: not-allowed;
+}
+
+.task-btn.is-locked:active {
+  transform: none;
+}
+
 /* 押した瞬間の明快なフィードバック */
 .task-btn.is-pressed-ok {
   background: var(--green-bg);

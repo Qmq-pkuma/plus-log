@@ -56,6 +56,22 @@ export const DEFAULT_TASKS: TaskItem[] = [
     span: 'half',
   },
   {
+    id: 'floss',
+    name: '歯間掃除',
+    code: 'FLOSS',
+    points: 3,
+    icon: 'check',
+    span: 'half',
+  },
+  {
+    id: 'shave',
+    name: '髭剃り',
+    code: 'SHAVE',
+    points: 3,
+    icon: 'zap',
+    span: 'half',
+  },
+  {
     id: 'open-curtain',
     name: 'カーテンを開ける',
     code: 'OPEN_CURTAIN',
@@ -65,7 +81,7 @@ export const DEFAULT_TASKS: TaskItem[] = [
   },
   {
     id: 'drink-water',
-    name: '水を飲む',
+    name: '寝起きの一杯（水）',
     code: 'DRINK_WATER',
     points: 3,
     icon: 'droplets',
@@ -73,6 +89,7 @@ export const DEFAULT_TASKS: TaskItem[] = [
     parentId: 'open-curtain',
     chainWindowMinutes: 60,
     chainBonus: 1,
+    requireParent: true,
   },
   {
     id: 'go-outside',
