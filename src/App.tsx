@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Cloud, CloudOff, CornerDownRight, RefreshCw, RotateCcw, Volume2, VolumeX } from 'lucide-react';
+import { CloudOff, CornerDownRight, RefreshCw, RotateCcw, Volume2, VolumeX } from 'lucide-react';
 import { ActionButton } from './components/ActionButton';
 import { ConfigSection } from './components/ConfigSection';
 import {
@@ -39,6 +39,7 @@ export function App() {
   const [syncConfig, setSyncConfig] = useState<GistSyncConfig>(() => loadSyncConfig());
   const [syncState, setSyncState] = useState<'idle' | 'syncing' | 'ok' | 'error'>('idle');
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncBanner, setSyncBanner] = useState<string | null>(null);
 
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [levelUpBanner, setLevelUpBanner] = useState<number | null>(null);
@@ -51,10 +52,23 @@ export function App() {
   const dataRef = useRef(data);
   const syncConfigRef = useRef(syncConfig);
   const deletedLogIdsRef = useRef<Set<string>>(new Set());
+  const deletedTaskIdsRef = useRef<Set<string>>(new Set());
   const syncTimerRef = useRef<number | null>(null);
+  const bannerTimerRef = useRef<number | null>(null);
 
   dataRef.current = data;
   syncConfigRef.current = syncConfig;
+
+  const showSyncBanner = (message: string) => {
+    setSyncBanner(message);
+    if (bannerTimerRef.current !== null) {
+      window.clearTimeout(bannerTimerRef.current);
+    }
+    bannerTimerRef.current = window.setTimeout(() => {
+      bannerTimerRef.current = null;
+      setSyncBanner(null);
+    }, 3600);
+  };
 
   useEffect(() => {
     saveAppData(data);
@@ -68,10 +82,26 @@ export function App() {
     preloadSoundPack(data.settings.soundProfile, data.settings.customSoundNames);
   }, [data.settings.soundProfile, data.settings.customSoundNames]);
 
-  const runSync = async (overrideConfig?: GistSyncConfig) => {
+  const runSync = async (
+    overrideConfig?: GistSyncConfig,
+    options?: { preferRemoteTasks?: boolean; showFeedback?: boolean }
+  ) => {
     const cfg = overrideConfig ?? syncConfigRef.current;
-    if (!cfg.enabled || !cfg.token) return;
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    if (!cfg.enabled || !cfg.token) {
+      if (options?.showFeedback) {
+        if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+          void navigator.serviceWorker.getRegistration().then((reg) => reg?.update());
+        }
+        showSyncBanner('Gist同期が未設定です（下の「設定 → 自動バックアップ・PC同期」から接続できます）');
+      }
+      return;
+    }
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      if (options?.showFeedback) {
+        showSyncBanner('オフラインのためGistから取得できませんでした');
+      }
+      return;
+    }
 
     setSyncState('syncing');
     setSyncError(null);
@@ -80,9 +110,13 @@ export function App() {
         config: cfg,
         localData: dataRef.current,
         deletedLogIds: deletedLogIdsRef.current,
+        deletedTaskIds: deletedTaskIdsRef.current,
+        preferRemoteTasks: options?.preferRemoteTasks,
       });
       deletedLogIdsRef.current.clear();
+      deletedTaskIdsRef.current.clear();
       setData(res.merged);
+      setNowMs(Date.now());
       setSyncConfig((prev) => ({
         ...prev,
         ...cfg,
@@ -90,9 +124,24 @@ export function App() {
         lastSyncedAt: res.syncedAt,
       }));
       setSyncState('ok');
+      if (options?.showFeedback) {
+        if (res.pulledTaskCount > 0 || res.pulledCount > 0) {
+          showSyncBanner(
+            `Gistから最新を取得しました（項目 +${res.pulledTaskCount}件 / 履歴 +${res.pulledCount}件）`
+          );
+        } else {
+          showSyncBanner(
+            `最新データを確認しました（項目 ${res.merged.tasks.length}件 / 履歴 ${res.merged.logs.length}件）`
+          );
+        }
+      }
     } catch (err) {
+      const msg = err instanceof Error ? err.message : '同期に失敗しました';
       setSyncState('error');
-      setSyncError(err instanceof Error ? err.message : '同期に失敗しました');
+      setSyncError(msg);
+      if (options?.showFeedback) {
+        showSyncBanner(`取得失敗: ${msg}`);
+      }
     }
   };
 
@@ -324,6 +373,7 @@ export function App() {
   };
 
   const handleDeleteTask = (id: string) => {
+    deletedTaskIdsRef.current.add(id);
     setData((prev) => ({
       ...prev,
       tasks: prev.tasks
@@ -387,28 +437,27 @@ export function App() {
             </div>
 
             <div className="status-actions">
-              {syncConfig.enabled && (
-                <button
-                  type="button"
-                  className={`top-btn sync-indicator ${syncState === 'error' ? 'is-err' : ''}`}
-                  onClick={() => void runSync()}
-                  title={
-                    syncState === 'error'
-                      ? `同期エラー: ${syncError ?? ''}`
-                      : syncConfig.lastSyncedAt
-                        ? `最終自動同期 ${formatShortTime(syncConfig.lastSyncedAt)}（タップで手動同期）`
-                        : 'タップで同期'
-                  }
-                >
-                  {syncState === 'syncing' ? (
-                    <RefreshCw size={14} className="spin" />
-                  ) : syncState === 'error' ? (
-                    <CloudOff size={14} />
-                  ) : (
-                    <Cloud size={14} />
-                  )}
-                </button>
-              )}
+              <button
+                type="button"
+                className={`top-btn sync-indicator ${syncState === 'error' ? 'is-err' : ''}`}
+                onClick={() => void runSync(undefined, { preferRemoteTasks: true, showFeedback: true })}
+                disabled={syncState === 'syncing'}
+                title={
+                  syncState === 'error'
+                    ? `同期エラー: ${syncError ?? ''}`
+                    : syncConfig.enabled && syncConfig.lastSyncedAt
+                      ? `最終同期 ${formatShortTime(syncConfig.lastSyncedAt)}（タップでGistから最新を取得）`
+                      : 'Gistから最新データを取得'
+                }
+                aria-label="Gistから最新を取得"
+              >
+                {syncState === 'error' ? (
+                  <CloudOff size={14} />
+                ) : (
+                  <RefreshCw size={14} className={syncState === 'syncing' ? 'spin' : ''} />
+                )}
+                <span>更新</span>
+              </button>
               <button
                 type="button"
                 className="top-btn"
@@ -430,6 +479,12 @@ export function App() {
               </button>
             </div>
           </div>
+
+          {syncBanner && (
+            <div className={`sync-banner ${syncState === 'error' ? 'is-err' : ''}`}>
+              {syncBanner}
+            </div>
+          )}
 
           <div className="progress-area">
             <div className="progress-track">
@@ -613,7 +668,7 @@ export function App() {
           syncState={syncState}
           syncError={syncError}
           onConnectGist={handleConnectGist}
-          onManualSync={() => void runSync()}
+          onManualSync={() => void runSync(undefined, { preferRemoteTasks: true, showFeedback: true })}
           onUpdateSettings={handleUpdateSettings}
           onAddTask={handleAddTask}
           onUpdateTask={handleUpdateTask}
@@ -621,7 +676,7 @@ export function App() {
           onImportData={handleImportData}
         />
 
-        <footer className="app-version num">加点ログ v0.2.2</footer>
+        <footer className="app-version num">加点ログ v0.2.3</footer>
       </main>
     </div>
   );

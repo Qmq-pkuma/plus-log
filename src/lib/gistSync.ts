@@ -1,4 +1,4 @@
-import type { AppData, LogEntry } from '../types';
+import type { AppData, LogEntry, TaskItem } from '../types';
 import { normalizeAppData } from './storage';
 
 const SYNC_CONFIG_KEY = 'pluslog.gist_sync.v1';
@@ -16,6 +16,7 @@ export interface GistSyncResult {
   gistId: string;
   syncedAt: number;
   pulledCount: number;
+  pulledTaskCount: number;
 }
 
 export function loadSyncConfig(): GistSyncConfig {
@@ -51,14 +52,18 @@ function authHeaders(token: string): Record<string, string> {
 }
 
 /**
- * ローカルとリモートのログをIDベースで和集合マージ（取り消し済みIDは除外）
- * データ消失を防ぎつつ複数端末の記録を統合する
+ * ローカルとリモートのログ・タスクをIDベースで和集合マージ（取り消し/削除済みIDは除外）
+ * Gist側の新しいタスク・ログがローカルに消されず確実に反映されるように統合する
  */
 export function mergeAppData(
   local: AppData,
   remote: AppData,
-  deletedLogIds: Set<string>
-): { merged: AppData; addedFromRemote: number } {
+  deletedLogIds: Set<string>,
+  options?: {
+    deletedTaskIds?: Set<string>;
+    preferRemoteTasks?: boolean;
+  }
+): { merged: AppData; addedFromRemote: number; addedTasksFromRemote: number } {
   const byId = new Map<string, LogEntry>();
   for (const log of remote.logs) {
     if (!deletedLogIds.has(log.id)) {
@@ -78,17 +83,45 @@ export function mergeAppData(
 
   const mergedLogs = Array.from(byId.values()).sort((a, b) => b.timestamp - a.timestamp);
 
-  // タスク定義・設定は操作中のローカルを優先（ローカルが初期ログ0件でリモートにタスクがある場合はリモート優先）
-  const useRemoteTasks = local.logs.length === 0 && remote.logs.length > 0 && remote.tasks.length > 0;
+  // タスクもIDベースで和集合マージ（ローカル削除済みIDのみ除外）
+  const deletedTasks = options?.deletedTaskIds ?? new Set<string>();
+  const preferRemoteTasks =
+    Boolean(options?.preferRemoteTasks) ||
+    (local.logs.length === 0 && remote.logs.length > 0 && remote.tasks.length > 0);
+
+  const localTaskIds = new Set(local.tasks.map((t) => t.id));
+  const mergedTasks: TaskItem[] = [];
+  const seenTaskIds = new Set<string>();
+
+  const primaryTasks = preferRemoteTasks ? remote.tasks : local.tasks;
+  const secondaryTasks = preferRemoteTasks ? local.tasks : remote.tasks;
+
+  for (const task of primaryTasks) {
+    if (deletedTasks.has(task.id) || seenTaskIds.has(task.id)) continue;
+    seenTaskIds.add(task.id);
+    mergedTasks.push(task);
+  }
+  for (const task of secondaryTasks) {
+    if (deletedTasks.has(task.id) || seenTaskIds.has(task.id)) continue;
+    seenTaskIds.add(task.id);
+    mergedTasks.push(task);
+  }
+
+  const finalTasks = mergedTasks.length > 0 ? mergedTasks : local.tasks;
+  let addedTasksFromRemote = 0;
+  for (const task of finalTasks) {
+    if (!localTaskIds.has(task.id)) addedTasksFromRemote += 1;
+  }
 
   return {
     merged: {
       version: 1,
-      tasks: useRemoteTasks ? remote.tasks : local.tasks,
+      tasks: finalTasks,
       logs: mergedLogs,
       settings: local.settings,
     },
     addedFromRemote,
+    addedTasksFromRemote,
   };
 }
 
@@ -160,6 +193,8 @@ export async function syncWithGist(params: {
   config: GistSyncConfig;
   localData: AppData;
   deletedLogIds?: Set<string>;
+  deletedTaskIds?: Set<string>;
+  preferRemoteTasks?: boolean;
 }): Promise<GistSyncResult> {
   const token = params.config.token.trim();
   if (!token) throw new Error('GitHubトークンが未設定です');
@@ -173,6 +208,7 @@ export async function syncWithGist(params: {
   };
 
   const deleted = params.deletedLogIds ?? new Set<string>();
+  const deletedTasks = params.deletedTaskIds ?? new Set<string>();
   let gistId = params.config.gistId.trim();
 
   if (!gistId) {
@@ -182,6 +218,7 @@ export async function syncWithGist(params: {
       gistId,
       syncedAt: Date.now(),
       pulledCount: 0,
+      pulledTaskCount: 0,
     };
   }
 
@@ -193,10 +230,19 @@ export async function syncWithGist(params: {
       gistId,
       syncedAt: Date.now(),
       pulledCount: 0,
+      pulledTaskCount: 0,
     };
   }
 
-  const { merged, addedFromRemote } = mergeAppData(cleanLocal, remote, deleted);
+  const { merged, addedFromRemote, addedTasksFromRemote } = mergeAppData(
+    cleanLocal,
+    remote,
+    deleted,
+    {
+      deletedTaskIds: deletedTasks,
+      preferRemoteTasks: params.preferRemoteTasks,
+    }
+  );
   await updateSecretGist(token, gistId, merged);
 
   return {
@@ -204,5 +250,6 @@ export async function syncWithGist(params: {
     gistId,
     syncedAt: Date.now(),
     pulledCount: addedFromRemote,
+    pulledTaskCount: addedTasksFromRemote,
   };
 }

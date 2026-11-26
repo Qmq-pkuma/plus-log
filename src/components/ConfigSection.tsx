@@ -648,7 +648,7 @@ export function ConfigSection({
           </div>
 
           <div className="cfg-footer num">
-            <span>v0.2.2</span>
+            <span>v0.2.3</span>
             <button
               type="button"
               className="cfg-reload-btn"

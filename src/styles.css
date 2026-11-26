@@ -1154,6 +1154,22 @@ select {
   border-color: #fcd34d;
 }
 
+.sync-banner {
+  padding: 7px 11px;
+  border-radius: 10px;
+  background: var(--green-bg);
+  border: 1px solid #a7f3d0;
+  color: var(--green-dark);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sync-banner.is-err {
+  background: #fffbeb;
+  border-color: #fcd34d;
+  color: #b45309;
+}
+
 .spin {
   animation: spin-anim 0.9s linear infinite;
 }

@@ -55,6 +55,33 @@ export const DEFAULT_TASKS: TaskItem[] = [
     icon: 'sparkles',
     span: 'half',
   },
+  {
+    id: 'open-curtain',
+    name: 'カーテンを開ける',
+    code: 'OPEN_CURTAIN',
+    points: 5,
+    icon: 'sun',
+    span: 'half',
+  },
+  {
+    id: 'drink-water',
+    name: '水を飲む',
+    code: 'DRINK_WATER',
+    points: 3,
+    icon: 'droplets',
+    span: 'half',
+    parentId: 'open-curtain',
+    chainWindowMinutes: 60,
+    chainBonus: 1,
+  },
+  {
+    id: 'go-outside',
+    name: '外に出る',
+    code: 'GO_OUTSIDE',
+    points: 8,
+    icon: 'activity',
+    span: 'full',
+  },
 ];
 
 export const DEFAULT_SETTINGS: AppSettings = {
