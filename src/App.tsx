@@ -34,6 +34,31 @@ function localDateHeading(timestamp: number): string {
   return `${y}/${String(m).padStart(2, '0')}/${String(day).padStart(2, '0')} (${wd})`;
 }
 
+function notifyNativeTaskLogged(taskId: string, timestamp: number): void {
+  try {
+    (
+      window as unknown as {
+        PlusLogNative?: { recordTaskLogged?: (id: string, ts: number) => void };
+      }
+    ).PlusLogNative?.recordTaskLogged?.(taskId, timestamp);
+  } catch {
+    // Webブラウザ単体などネイティブブリッジ未接続時は何もしない
+  }
+}
+
+function syncLatestLogsToNative(logs: LogEntry[]): void {
+  const latestByTask = new Map<string, number>();
+  for (const log of logs) {
+    const prev = latestByTask.get(log.taskId);
+    if (prev === undefined || log.timestamp > prev) {
+      latestByTask.set(log.taskId, log.timestamp);
+    }
+  }
+  for (const [taskId, ts] of latestByTask.entries()) {
+    notifyNativeTaskLogged(taskId, ts);
+  }
+}
+
 export function App() {
   const [data, setData] = useState<AppData>(() => loadAppData());
   const [syncConfig, setSyncConfig] = useState<GistSyncConfig>(() => loadSyncConfig());
@@ -116,6 +141,7 @@ export function App() {
       deletedLogIdsRef.current.clear();
       deletedTaskIdsRef.current.clear();
       setData(res.merged);
+      syncLatestLogsToNative(res.merged.logs);
       setNowMs(Date.now());
       setSyncConfig((prev) => ({
         ...prev,
@@ -159,6 +185,7 @@ export function App() {
 
   // 初回起動時とアプリ復帰時に自動同期
   useEffect(() => {
+    syncLatestLogsToNative(dataRef.current.logs);
     if (syncConfigRef.current.enabled && syncConfigRef.current.token) {
       void runSync();
     }
@@ -337,6 +364,7 @@ export function App() {
       ...prev,
       logs: [entry, ...prev.logs],
     }));
+    notifyNativeTaskLogged(task.id, ts);
     scheduleAutoSync();
   };
 
@@ -676,7 +704,7 @@ export function App() {
           onImportData={handleImportData}
         />
 
-        <footer className="app-version num">加点ログ v0.2.5</footer>
+        <footer className="app-version num">加点ログ v0.2.6</footer>
       </main>
     </div>
   );
