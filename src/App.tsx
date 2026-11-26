@@ -676,7 +676,7 @@ export function App() {
           onImportData={handleImportData}
         />
 
-        <footer className="app-version num">加点ログ v0.2.3</footer>
+        <footer className="app-version num">加点ログ v0.2.4</footer>
       </main>
     </div>
   );
